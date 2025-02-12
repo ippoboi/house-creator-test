@@ -28,8 +28,20 @@ interface RoomData {
 }
 
 const RoomVisualization = ({ roomData }: { roomData: RoomData }) => {
-  const { room, branding } = roomData;
-  const wallHeight = room.walls.north.height;
+  const { room } = roomData;
+  const wallHeight = 50;
+
+  const colors = {
+    walls: "#F0F0F0",
+    ceiling: "#FFFFFF",
+    edges: "#E0E0E0",
+  };
+
+  const [isRoomSelected, setIsRoomSelected] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Calculate corner points with isometric projection (30° angle)
   const generateCornerPoints = () => {
@@ -67,12 +79,26 @@ const RoomVisualization = ({ roomData }: { roomData: RoomData }) => {
 
   const corners = generateCornerPoints();
 
-  // Generate SVG paths for isometric view
-  const floorPath = `
-    M ${corners.topLeft.x},${corners.topLeft.y}
-    L ${corners.topRight.x},${corners.topRight.y}
-    L ${corners.bottomRight.x},${corners.bottomRight.y}
-    L ${corners.bottomLeft.x},${corners.bottomLeft.y}
+  // Add ceiling points (shifted up by wallHeight)
+  const ceilingCorners = {
+    topLeft: { x: corners.topLeft.x, y: corners.topLeft.y - wallHeight },
+    topRight: { x: corners.topRight.x, y: corners.topRight.y - wallHeight },
+    bottomLeft: {
+      x: corners.bottomLeft.x,
+      y: corners.bottomLeft.y - wallHeight,
+    },
+    bottomRight: {
+      x: corners.bottomRight.x,
+      y: corners.bottomRight.y - wallHeight,
+    },
+  };
+
+  // Ceiling path (top face)
+  const ceilingPath = `
+    M ${ceilingCorners.topLeft.x},${ceilingCorners.topLeft.y}
+    L ${ceilingCorners.topRight.x},${ceilingCorners.topRight.y}
+    L ${ceilingCorners.bottomRight.x},${ceilingCorners.bottomRight.y}
+    L ${ceilingCorners.bottomLeft.x},${ceilingCorners.bottomLeft.y}
     Z
   `;
 
@@ -112,64 +138,107 @@ const RoomVisualization = ({ roomData }: { roomData: RoomData }) => {
     Z
   `;
 
-  return (
-    <svg viewBox="-200 -200 1000 800" style={{ width: "100%", height: "100%" }}>
-      <defs>
-        <linearGradient id="wallGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop
-            offset="0%"
-            style={{ stopColor: branding.colors.secondary, stopOpacity: 1 }}
-          />
-          <stop
-            offset="100%"
-            style={{ stopColor: branding.colors.secondary, stopOpacity: 0.8 }}
-          />
-        </linearGradient>
-      </defs>
+  const handleRoomClick = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    setIsRoomSelected(true);
+    setMenuPosition({ x: event.clientX, y: event.clientY });
+  };
 
-      <g className="room-group">
-        {/* Floor */}
-        <path
-          className="floor"
-          d={floorPath}
-          fill={branding.colors.primary}
-          stroke="#000"
-          strokeWidth="1"
-        />
-        {/* Back Wall */}
-        <path
-          className="back-wall"
-          d={backWallPath}
-          fill="url(#wallGradient)"
-          stroke="#000"
-          strokeWidth="1"
-        />
-        {/* Left Wall */}
-        <path
-          className="left-wall"
-          d={leftWallPath}
-          fill="url(#wallGradient)"
-          stroke="#000"
-          strokeWidth="1"
-        />
-        {/* Right Wall */}
-        <path
-          className="right-wall"
-          d={rightWallPath}
-          fill="url(#wallGradient)"
-          stroke="#000"
-          strokeWidth="1"
-        />
-        {/* Front Wall */}
-        <path
-          className="front-wall"
-          d={frontWallPath}
-          fill="url(#wallGradient)"
-          stroke="#000"
-          strokeWidth="1"
-        />
-      </g>
-    </svg>
+  const handleBackgroundClick = () => {
+    setIsRoomSelected(false);
+    setMenuPosition(null);
+  };
+
+  return (
+    <div onClick={handleBackgroundClick}>
+      <svg
+        viewBox="-200 -200 1000 800"
+        style={{ width: "100%", height: "100%" }}
+      >
+        <g
+          className="room-group"
+          onClick={handleRoomClick}
+          style={{ cursor: "pointer" }}
+        >
+          {/* Walls */}
+          <path
+            className="back-wall"
+            d={backWallPath}
+            fill={colors.walls}
+            stroke={isRoomSelected ? "#3B82F6" : colors.edges}
+            strokeWidth={isRoomSelected ? "2" : "1"}
+            opacity={isRoomSelected ? 1 : 0.9}
+          />
+          <path
+            className="left-wall"
+            d={leftWallPath}
+            fill={colors.walls}
+            stroke={isRoomSelected ? "#3B82F6" : colors.edges}
+            strokeWidth={isRoomSelected ? "2" : "1"}
+            opacity={isRoomSelected ? 1 : 0.9}
+          />
+          <path
+            className="right-wall"
+            d={rightWallPath}
+            fill={colors.walls}
+            stroke={isRoomSelected ? "#3B82F6" : colors.edges}
+            strokeWidth={isRoomSelected ? "2" : "1"}
+            opacity={isRoomSelected ? 1 : 0.9}
+          />
+          <path
+            className="front-wall"
+            d={frontWallPath}
+            fill={colors.walls}
+            stroke={isRoomSelected ? "#3B82F6" : colors.edges}
+            strokeWidth={isRoomSelected ? "2" : "1"}
+            opacity={isRoomSelected ? 1 : 0.9}
+          />
+
+          {/* Ceiling */}
+          <path
+            className="ceiling"
+            d={ceilingPath}
+            fill={colors.ceiling}
+            stroke={isRoomSelected ? "#3B82F6" : colors.edges}
+            strokeWidth={isRoomSelected ? "2" : "1"}
+          />
+        </g>
+      </svg>
+
+      {/* Quick Action Menu */}
+      {isRoomSelected && menuPosition && (
+        <div
+          className="absolute bg-white shadow-lg rounded-lg p-2 z-10"
+          style={{
+            left: menuPosition.x,
+            top: menuPosition.y,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          <div className="text-sm font-medium mb-2">Room Actions</div>
+          <div className="flex flex-col gap-1">
+            <button
+              className="px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+              onClick={() => console.log("Edit room dimensions")}
+            >
+              Edit Dimensions
+            </button>
+            <button
+              className="px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+              onClick={() => console.log("Change room style")}
+            >
+              Change Style
+            </button>
+            <button
+              className="px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 rounded"
+              onClick={() => console.log("Add furniture")}
+            >
+              Add Furniture
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -250,7 +319,8 @@ export default function Page() {
         </div>
       ) : !error ? (
         <div className="text-gray-500 text-center">
-          Enter a room name and click "Display Room" to view the visualization
+          Enter a room name and click &quot;Display Room&quot; to view the
+          visualization
         </div>
       ) : null}
     </div>

@@ -140,19 +140,11 @@ export default function Home() {
             position: { x: roomData.x, y: roomData.y },
             dimensions: { width: roomData.width, height: roomData.height },
             walls: {
-              north: { height: 25, style: "primary" },
-              east: { height: 25, style: "secondary" },
-              south: { height: 25, style: "primary" },
-              west: { height: 25, style: "secondary" },
+              north: { height: 50, style: "solid" },
+              east: { height: 50, style: "solid" },
+              south: { height: 50, style: "solid" },
+              west: { height: 50, style: "solid" },
             },
-          },
-          branding: {
-            colors: {
-              primary: "#2A5C8A",
-              secondary: "#3BA18D",
-              background: "#F0F4F7",
-            },
-            shadows: true,
           },
         }),
       });
