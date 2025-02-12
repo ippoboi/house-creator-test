@@ -14,11 +14,12 @@ type RectangleProps = {
   onDelete?: (id: string) => void;
   onRename?: (id: string, newName: string) => void;
   otherRooms?: Array<{ x: number; y: number; width: number; height: number }>;
+  onClick?: (id: string) => void;
+  isSelected?: boolean;
 };
 
 const ColoredRect = (props: RectangleProps) => {
-  const [position, setPosition] = useState({ x: props.x, y: props.y });
-  const [isSelected, setIsSelected] = useState(false);
+  const [isSelected, setIsSelected] = useState(props.isSelected || false);
   const [editText, setEditText] = useState(props.name);
   const [isEditingText, setIsEditingText] = useState(false);
   const [dimensions, setDimensions] = useState({
@@ -28,7 +29,7 @@ const ColoredRect = (props: RectangleProps) => {
   const shapeRef = useRef<Konva.Rect>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const textRef = useRef<Konva.Text>(null);
-  const SNAP_THRESHOLD = 10; // Distance in pixels for snapping
+  const SNAP_THRESHOLD = 10;
 
   // Update dimensions when props change
   useEffect(() => {
@@ -91,6 +92,19 @@ const ColoredRect = (props: RectangleProps) => {
   }, [isSelected]);
 
   useEffect(() => {
+    if (props.isSelected) {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Delete" || e.key === "Backspace") {
+          props.onDelete?.(props.name);
+        }
+      };
+
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }
+  }, [props.isSelected, props.name, props.onDelete]);
+
+  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isEditingText) {
         if (isSelected && (e.key === "Delete" || e.key === "Backspace")) {
@@ -151,38 +165,33 @@ const ColoredRect = (props: RectangleProps) => {
     let newX = e.target.x();
     let newY = e.target.y();
 
-    // Check for snapping with other rooms
     if (props.otherRooms) {
       props.otherRooms.forEach((room) => {
-        // Snap horizontally
         if (Math.abs(newX - room.x) < SNAP_THRESHOLD) {
-          newX = room.x; // Snap to left edge
+          newX = room.x;
         }
         if (
           Math.abs(newX + props.width - (room.x + room.width)) < SNAP_THRESHOLD
         ) {
-          newX = room.x + room.width - props.width; // Snap to right edge
+          newX = room.x + room.width - props.width;
         }
-
-        // Snap vertically
         if (Math.abs(newY - room.y) < SNAP_THRESHOLD) {
-          newY = room.y; // Snap to top edge
+          newY = room.y;
         }
         if (
           Math.abs(newY + props.height - (room.y + room.height)) <
           SNAP_THRESHOLD
         ) {
-          newY = room.y + room.height - props.height; // Snap to bottom edge
+          newY = room.y + room.height - props.height;
         }
       });
     }
 
-    setPosition({ x: newX, y: newY });
     e.target.position({ x: newX, y: newY });
   };
 
-  const handleDragEnd = () => {
-    props.onPositionChange?.(props.name, position.x, position.y);
+  const handleDragEnd = (e: Konva.KonvaEventObject<DragEvent>) => {
+    props.onPositionChange?.(props.name, e.target.x(), e.target.y());
   };
 
   const handleTransform = () => {
@@ -207,7 +216,9 @@ const ColoredRect = (props: RectangleProps) => {
     props.onResize?.(props.name, newWidth, newHeight);
   };
 
-  const handleSelect = () => {
+  const handleClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    e.cancelBubble = true; // Prevent event from bubbling up
+    props.onClick?.(props.name);
     setIsSelected(true);
   };
 
@@ -243,8 +254,9 @@ const ColoredRect = (props: RectangleProps) => {
         draggable
         onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
-        x={position.x}
-        y={position.y}
+        x={props.x}
+        y={props.y}
+        onClick={handleClick}
       >
         <Line
           points={props.points.flatMap((p) => [p.x, p.y])}
@@ -252,7 +264,7 @@ const ColoredRect = (props: RectangleProps) => {
           fill="#90caf9"
           stroke="#666"
           strokeWidth={2}
-          onClick={handleSelect}
+          onClick={handleClick}
         />
         <Text
           ref={textRef}
@@ -272,19 +284,21 @@ const ColoredRect = (props: RectangleProps) => {
 
   // Render regular rectangle
   return (
-    <Group>
+    <Group
+      x={props.x}
+      y={props.y}
+      draggable
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+      onClick={handleClick}
+    >
       <Rect
         ref={shapeRef}
-        x={position.x}
-        y={position.y}
         width={dimensions.width}
         height={dimensions.height}
-        fill="#90caf9"
-        onClick={handleSelect}
-        onTap={handleSelect}
-        draggable
-        onDragMove={handleDragMove}
-        onDragEnd={handleDragEnd}
+        fill="#fff"
+        onClick={handleClick}
+        onTap={handleClick}
         onTransform={handleTransform}
         strokeWidth={2}
         stroke="#666"
@@ -292,8 +306,8 @@ const ColoredRect = (props: RectangleProps) => {
       {/* Preview rectangle while drawing */}
       {props.name === "Drawing..." && (
         <Rect
-          x={position.x}
-          y={position.y}
+          x={props.x}
+          y={props.y}
           width={dimensions.width}
           height={dimensions.height}
           stroke="#0096FF"
@@ -303,8 +317,8 @@ const ColoredRect = (props: RectangleProps) => {
       )}
       <Text
         ref={textRef}
-        x={position.x + dimensions.width / 2 - 50}
-        y={position.y + (dimensions.height - 20) / 2}
+        x={dimensions.width / 2 - 50}
+        y={(dimensions.height - 20) / 2}
         text={editText + (isEditingText ? "|" : "")}
         fontSize={16}
         fill="black"
@@ -314,7 +328,7 @@ const ColoredRect = (props: RectangleProps) => {
         onClick={handleTextClick}
         onTap={handleTextClick}
       />
-      <Transformer ref={transformerRef} />
+      {isSelected && <Transformer ref={transformerRef} />}
     </Group>
   );
 };

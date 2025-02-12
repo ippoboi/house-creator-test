@@ -2,6 +2,9 @@ import { Layer, Stage } from "react-konva";
 import { useState, useEffect } from "react";
 import Konva from "konva";
 import GridBackground from "./GridBackground";
+import SaveButton from "./SaveButton";
+import { KonvaEventObject } from "konva/lib/Node";
+import React from "react";
 
 type CanvasProps = {
   children: React.ReactNode;
@@ -13,102 +16,98 @@ type CanvasProps = {
   onTouchEnd?: (e: Konva.KonvaEventObject<TouchEvent>) => void;
   isPanning: boolean;
   setIsPanning: (isPanning: boolean) => void;
+  onSaveRoom?: (selectedRoom: string | null) => void;
+  onCanvasClick?: () => void;
+  currentTool: string;
 };
 
 function Canvas(props: CanvasProps) {
-  const [stageScale, setStageScale] = useState({ x: 1, y: 1 });
+  const [stageScale, setStageScale] = useState(1);
   const [stagePosition, setStagePosition] = useState({ x: 0, y: 0 });
-  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
-  const [lastCenter, setLastCenter] = useState<{ x: number; y: number } | null>(
-    null
-  );
-  const [lastDist, setLastDist] = useState<number | null>(null);
-  const [lastMousePosition, setLastMousePosition] = useState<{
+  const [stageSize, setStageSize] = useState({ width: 1000, height: 800 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [lastPointerPosition, setLastPointerPosition] = useState<{
     x: number;
     y: number;
   } | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
 
   useEffect(() => {
     const updateSize = () => {
-      const container = document.querySelector(".konvajs-content");
-      if (container) {
-        setStageSize({
-          width: container.clientWidth,
-          height: container.clientHeight,
-        });
-      }
+      setStageSize({
+        width: window.innerWidth - 160,
+        height: window.innerHeight - 200,
+      });
     };
-
     updateSize();
     window.addEventListener("resize", updateSize);
     return () => window.removeEventListener("resize", updateSize);
   }, []);
 
-  const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
+  const handleWheel = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault();
     const scaleBy = 1.1;
     const stage = e.target.getStage();
-    if (!stage) return;
-
     const oldScale = stage.scaleX();
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return;
-
     const mousePointTo = {
-      x: pointer.x / oldScale - stage.x() / oldScale,
-      y: pointer.y / oldScale - stage.y() / oldScale,
+      x: stage.getPointerPosition().x / oldScale - stage.x() / oldScale,
+      y: stage.getPointerPosition().y / oldScale - stage.y() / oldScale,
     };
 
     const newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
-
-    setStageScale({ x: newScale, y: newScale });
+    setStageScale(newScale);
     setStagePosition({
-      x: -(mousePointTo.x - pointer.x / newScale) * newScale,
-      y: -(mousePointTo.y - pointer.y / newScale) * newScale,
+      x: -(mousePointTo.x - stage.getPointerPosition().x / newScale) * newScale,
+      y: -(mousePointTo.y - stage.getPointerPosition().y / newScale) * newScale,
     });
   };
 
-  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (props.isPanning) {
+  const handleMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+    if (props.currentTool === "drag") {
+      setIsDragging(true);
       const stage = e.target.getStage();
-      if (!stage) return;
-
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
-
-      setLastMousePosition(pointer);
+      const pointerPos = stage?.getPointerPosition();
+      if (pointerPos) {
+        setLastPointerPosition(pointerPos);
+      }
       return;
     }
     props.onMouseDown?.(e);
   };
 
-  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (props.isPanning && lastMousePosition) {
+  const handleMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+    if (isDragging && props.currentTool === "drag" && lastPointerPosition) {
       const stage = e.target.getStage();
-      if (!stage) return;
+      const pointerPos = stage?.getPointerPosition();
+      if (!pointerPos) return;
 
-      const pointer = stage.getPointerPosition();
-      if (!pointer) return;
+      // Calculate how far the mouse has moved
+      const dx = pointerPos.x - lastPointerPosition.x;
+      const dy = pointerPos.y - lastPointerPosition.y;
 
-      const dx = pointer.x - lastMousePosition.x;
-      const dy = pointer.y - lastMousePosition.y;
-
+      // Update the stage position based on the mouse movement
       setStagePosition({
         x: stagePosition.x + dx,
         y: stagePosition.y + dy,
       });
 
-      setLastMousePosition(pointer);
+      // Update the last pointer position
+      setLastPointerPosition(pointerPos);
       return;
     }
     props.onMouseMove?.(e);
   };
 
-  const handleMouseUp = (e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (props.isPanning) {
-      setLastMousePosition(null);
+  const handleMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+    if (isDragging) {
+      setIsDragging(false);
+      setLastPointerPosition(null);
       return;
     }
+    props.onMouseUp?.(e);
+  };
+
+  const handleMouseLeave = (e: KonvaEventObject<MouseEvent>) => {
     props.onMouseUp?.(e);
   };
 
@@ -133,8 +132,6 @@ function Canvas(props: CanvasProps) {
       const center = getCenter(touches[0], touches[1]);
       const dist = getDistance(touches[0], touches[1]);
 
-      setLastCenter(center);
-      setLastDist(dist);
       props.setIsPanning(true);
       return;
     }
@@ -146,7 +143,7 @@ function Canvas(props: CanvasProps) {
 
   const handleTouchMove = (e: Konva.KonvaEventObject<TouchEvent>) => {
     const touches = e.evt.touches;
-    if (touches.length === 2 && lastCenter && lastDist !== null) {
+    if (touches.length === 2) {
       e.evt.preventDefault();
 
       const center = getCenter(touches[0], touches[1]);
@@ -156,21 +153,19 @@ function Canvas(props: CanvasProps) {
       const stage = e.target.getStage();
       if (!stage) return;
 
-      const oldScale = stageScale.x;
-      const newScale = oldScale * (dist / lastDist);
+      const oldScale = stageScale;
+      const newScale = oldScale * (dist / dist);
 
       // Handle pan
-      const dx = center.x - lastCenter.x;
-      const dy = center.y - lastCenter.y;
+      const dx = center.x - stagePosition.x;
+      const dy = center.y - stagePosition.y;
 
-      setStageScale({ x: newScale, y: newScale });
+      setStageScale(newScale);
       setStagePosition({
         x: stagePosition.x + dx,
         y: stagePosition.y + dy,
       });
 
-      setLastCenter(center);
-      setLastDist(dist);
       return;
     }
 
@@ -180,41 +175,72 @@ function Canvas(props: CanvasProps) {
   const handleTouchEnd = (e: Konva.KonvaEventObject<TouchEvent>) => {
     const touches = e.evt.touches;
     if (touches.length < 2) {
-      setLastCenter(null);
-      setLastDist(null);
       props.setIsPanning(false);
     }
     props.onTouchEnd?.(e);
   };
 
+  const handleCanvasClick = (e: KonvaEventObject<MouseEvent>) => {
+    if (e.target === e.target.getStage()) {
+      setSelectedRoom(null);
+      props.onCanvasClick?.();
+    }
+  };
+
+  const handleRoomSelect = (roomId: string) => {
+    setSelectedRoom(roomId);
+  };
+
+  // Clone children and add selection handler
+  const childrenWithProps = React.Children.map(props.children, (child) => {
+    if (React.isValidElement(child)) {
+      return React.cloneElement(child, {
+        onClick: (id: string) => {
+          handleRoomSelect(id);
+          child.props.onClick?.(id);
+        },
+        isSelected: child.props.name === selectedRoom,
+      });
+    }
+    return child;
+  });
+
   return (
     <div className="relative rounded-md w-full h-full overflow-hidden">
+      <SaveButton
+        onClick={() => props.onSaveRoom?.(selectedRoom)}
+        disabled={!selectedRoom || !props.onSaveRoom}
+      />
       <Stage
-        width={stageSize.width || window.innerWidth - 40}
-        height={stageSize.height || window.innerHeight - 200}
+        width={stageSize.width}
+        height={stageSize.height}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onWheel={handleWheel}
-        scaleX={stageScale.x}
-        scaleY={stageScale.y}
+        scaleX={stageScale}
+        scaleY={stageScale}
         x={stagePosition.x}
         y={stagePosition.y}
-        draggable={false}
+        draggable={props.currentTool === "drag" && isDragging}
+        onDragEnd={(e) => {
+          setStagePosition(e.target.position());
+        }}
+        onClick={handleCanvasClick}
       >
         <Layer>
           <GridBackground
             spacing={50}
-            dotSize={1.5}
-            stageScale={stageScale.x}
+            stageScale={stageScale}
             stagePosition={stagePosition}
             stageSize={stageSize}
           />
-          {props.children}
         </Layer>
+        <Layer>{childrenWithProps}</Layer>
       </Stage>
     </div>
   );

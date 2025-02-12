@@ -5,6 +5,8 @@ import { useState, useRef } from "react";
 import ToolBar from "@/components/ToolBar";
 import { Tool } from "@/types";
 import { KonvaEventObject } from "konva/lib/Node";
+import { toast } from "sonner";
+import Link from "next/link";
 
 const Canvas = dynamic(() => import("@/components/Canvas"), {
   ssr: false,
@@ -30,12 +32,7 @@ export default function Home() {
   const roomCountRef = useRef(0);
   const [currentTool, setCurrentTool] = useState<Tool>("rectangle");
   const [isPanning, setIsPanning] = useState(false);
-
-  const handleToolChange = (tool: Tool) => {
-    setCurrentTool(tool);
-    // Reset panning when switching tools
-    setIsPanning(false);
-  };
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
 
   const handleMouseDown = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
     if (currentTool === "drag") {
@@ -49,10 +46,7 @@ export default function Home() {
     }
 
     const stage = e.target.getStage();
-    if (!stage) return;
-
     const point = stage.getPointerPosition();
-    if (!point) return;
 
     const stageScale = stage.scaleX();
     const stagePos = stage.position();
@@ -83,10 +77,7 @@ export default function Home() {
     if (!isDrawing || !currentRoom) return;
 
     const stage = e.target.getStage();
-    if (!stage) return;
-
     const point = stage.getPointerPosition();
-    if (!point) return;
 
     // Convert point to relative coordinates
     const stageScale = stage.scaleX();
@@ -125,7 +116,7 @@ export default function Home() {
     roomCountRef.current += 1;
   };
 
-  const handleRoomSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleRoomSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
     const roomData: RoomData = {
@@ -135,8 +126,55 @@ export default function Home() {
       x: 50,
       y: 50,
     };
-    setRooms((prev) => [...prev, roomData]);
-    (e.target as HTMLFormElement).reset();
+
+    try {
+      const response = await fetch("http://localhost:8000/api/rooms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          room: {
+            id: roomData.name,
+            type: "rectangle",
+            position: { x: roomData.x, y: roomData.y },
+            dimensions: { width: roomData.width, height: roomData.height },
+            walls: {
+              north: { height: 25, style: "primary" },
+              east: { height: 25, style: "secondary" },
+              south: { height: 25, style: "primary" },
+              west: { height: 25, style: "secondary" },
+            },
+          },
+          branding: {
+            colors: {
+              primary: "#2A5C8A",
+              secondary: "#3BA18D",
+              background: "#F0F4F7",
+            },
+            shadows: true,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save room");
+      }
+
+      setRooms((prev) => [...prev, roomData]);
+      (e.target as HTMLFormElement).reset();
+
+      toast.success("Room added successfully", {
+        description: `Room "${roomData.name}" has been created with walls and branding.`,
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error("Error saving room:", error);
+      toast.error("Failed to add room", {
+        description: "There was an error creating the room.",
+        duration: 4000,
+      });
+    }
   };
 
   const handlePositionChange = (id: string, newX: number, newY: number) => {
@@ -161,8 +199,69 @@ export default function Home() {
     );
   };
 
-  const handleRoomDelete = (id: string) => {
-    setRooms((prevRooms) => prevRooms.filter((room) => room.name !== id));
+  const handleSaveRoom = async (selectedRoomId: string | null) => {
+    if (!selectedRoomId) return;
+
+    const roomToSave = rooms.find((room) => room.name === selectedRoomId);
+    if (!roomToSave) return;
+
+    try {
+      const response = await fetch("http://localhost:8000/api/rooms", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          room: {
+            id: roomToSave.name,
+            type: "rectangle",
+            position: { x: roomToSave.x, y: roomToSave.y },
+            dimensions: { width: roomToSave.width, height: roomToSave.height },
+            walls: {
+              north: { height: 25, style: "primary" },
+              east: { height: 25, style: "secondary" },
+              south: { height: 25, style: "primary" },
+              west: { height: 25, style: "secondary" },
+            },
+          },
+          branding: {
+            colors: {
+              primary: "#E0E0E0",
+              secondary: "#fff",
+              background: "#D0D0D0",
+            },
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save room");
+      }
+
+      toast.success("Room saved successfully", {
+        description: `Room "${roomToSave.name}" has been saved with walls and branding.`,
+        duration: 3000,
+      });
+    } catch (error) {
+      console.error("Error saving room:", error);
+      toast.error("Failed to save room", {
+        description: "There was an error saving the room to the database.",
+        duration: 4000,
+      });
+    }
+  };
+
+  const handleRoomDelete = (roomId: string) => {
+    setRooms((prevRooms) => prevRooms.filter((room) => room.name !== roomId));
+    setSelectedRoom(null);
+    toast.success("Room deleted", {
+      description: `Room "${roomId}" has been deleted.`,
+      duration: 3000,
+    });
+  };
+
+  const handleRoomSelect = (roomId: string) => {
+    setSelectedRoom(roomId);
   };
 
   const handleRoomRename = (id: string, newName: string) => {
@@ -178,48 +277,56 @@ export default function Home() {
       <div className="flex justify-between mb-4">
         <div className="max-w-64 space-y-2">
           <h1 className="text-2xl font-bold">Room Designer</h1>
-          <p className="text-sm text-gray-600">
-            Click and drag on the canvas to draw rooms or use the form
-          </p>
+          <p className="text-sm text-gray-600">Use the form to add rooms</p>
         </div>
-        <form onSubmit={handleRoomSubmit} className="space-x-2">
-          <input
-            type="text"
-            name="name"
-            placeholder="Room name"
-            className="border p-2 rounded"
-          />
-          <input
-            type="number"
-            name="width"
-            placeholder="Width"
-            className="border p-2 rounded w-20"
-          />
-          <input
-            type="number"
-            name="height"
-            placeholder="Height"
-            className="border p-2 rounded w-20"
-          />
-          <button
-            type="submit"
-            className="bg-blue-500 text-white px-4 py-2 rounded"
+        <div className="flex gap-4">
+          <Link
+            href="/visualization"
+            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition-colors"
           >
-            Add Room
-          </button>
-        </form>
+            View 3D
+          </Link>
+          <form onSubmit={handleRoomSubmit} className="space-x-2">
+            <input
+              type="text"
+              name="name"
+              placeholder="Room name"
+              className="border p-2 rounded"
+              required
+            />
+            <input
+              type="number"
+              name="width"
+              placeholder="Width"
+              className="border p-2 rounded w-20"
+              required
+            />
+            <input
+              type="number"
+              name="height"
+              placeholder="Height"
+              className="border p-2 rounded w-20"
+              required
+            />
+            <button
+              type="submit"
+              className="bg-blue-500 text-white px-4 py-2 rounded"
+            >
+              Add Room
+            </button>
+          </form>
+        </div>
       </div>
       <div className="flex-1 border border-gray-200 rounded-lg">
-        <ToolBar currentTool={currentTool} onToolChange={handleToolChange} />
+        <ToolBar currentTool={currentTool} onToolChange={setCurrentTool} />
         <Canvas
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
-          onTouchStart={handleMouseDown}
-          onTouchMove={handleMouseMove}
-          onTouchEnd={handleMouseUp}
           isPanning={isPanning}
           setIsPanning={setIsPanning}
+          currentTool={currentTool}
+          onSaveRoom={handleSaveRoom}
         >
           {rooms.map((room) => {
             const otherRooms = rooms.filter((r) => r.name !== room.name);
@@ -234,7 +341,9 @@ export default function Home() {
                 onPositionChange={handlePositionChange}
                 onResize={handleRoomResize}
                 onDelete={handleRoomDelete}
+                onClick={handleRoomSelect}
                 onRename={handleRoomRename}
+                isSelected={selectedRoom === room.name}
                 otherRooms={otherRooms}
               />
             );
