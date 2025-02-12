@@ -11,64 +11,141 @@ type RectangleProps = {
   points?: { x: number; y: number }[];
   onPositionChange?: (id: string, newX: number, newY: number) => void;
   onResize?: (id: string, newWidth: number, newHeight: number) => void;
+  onDelete?: (id: string) => void;
+  onRename?: (id: string, newName: string) => void;
   otherRooms?: Array<{ x: number; y: number; width: number; height: number }>;
 };
 
 const ColoredRect = (props: RectangleProps) => {
-  const [color, setColor] = useState("green");
   const [position, setPosition] = useState({ x: props.x, y: props.y });
+  const [isSelected, setIsSelected] = useState(false);
+  const [editText, setEditText] = useState(props.name);
+  const [isEditingText, setIsEditingText] = useState(false);
+  const [dimensions, setDimensions] = useState({
+    width: props.width,
+    height: props.height,
+  });
   const shapeRef = useRef<Konva.Rect>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
+  const textRef = useRef<Konva.Text>(null);
   const SNAP_THRESHOLD = 10; // Distance in pixels for snapping
+
+  // Update dimensions when props change
+  useEffect(() => {
+    setDimensions({ width: props.width, height: props.height });
+  }, [props.width, props.height]);
 
   useEffect(() => {
     if (shapeRef.current && transformerRef.current) {
-      // Always attach transformer
-      transformerRef.current.nodes([shapeRef.current]);
-      transformerRef.current.getLayer()?.batchDraw();
+      if (isSelected) {
+        // Attach transformer only when selected
+        transformerRef.current.nodes([shapeRef.current]);
+        transformerRef.current.getLayer()?.batchDraw();
 
-      // Configure transformer
-      transformerRef.current.setAttrs({
-        enabledAnchors: [
-          "top-left",
-          "top-center",
-          "top-right",
-          "middle-right",
-          "middle-left",
-          "bottom-left",
-          "bottom-center",
-          "bottom-right",
-        ],
-        rotateEnabled: false,
-        borderStroke: "#0096FF",
-        borderStrokeWidth: 2,
-        anchorFill: "#fff",
-        anchorStroke: "#0096FF",
-        anchorStrokeWidth: 2,
-        anchorSize: 8,
-        keepRatio: false,
-        // Custom cursors for different anchors
-        anchorStyleHandler: (anchor) => {
-          switch (anchor) {
-            case "top-left":
-            case "bottom-right":
-              return { cursor: "nwse-resize" };
-            case "top-right":
-            case "bottom-left":
-              return { cursor: "nesw-resize" };
-            case "top-center":
-            case "bottom-center":
-              return { cursor: "ns-resize" };
-            case "middle-left":
-            case "middle-right":
-              return { cursor: "ew-resize" };
-            default:
-              return { cursor: "pointer" };
-          }
-        },
-      });
+        // Configure transformer
+        transformerRef.current.setAttrs({
+          enabledAnchors: [
+            "top-left",
+            "top-center",
+            "top-right",
+            "middle-right",
+            "middle-left",
+            "bottom-left",
+            "bottom-center",
+            "bottom-right",
+          ],
+          rotateEnabled: false,
+          borderStroke: "#0096FF",
+          borderStrokeWidth: 2,
+          anchorFill: "#fff",
+          anchorStroke: "#0096FF",
+          anchorStrokeWidth: 2,
+          anchorSize: 8,
+          keepRatio: false,
+          // Custom cursors for different anchors
+          anchorStyleHandler: (anchor: string) => {
+            switch (anchor) {
+              case "top-left":
+              case "bottom-right":
+                return { cursor: "nwse-resize" };
+              case "top-right":
+              case "bottom-left":
+                return { cursor: "nesw-resize" };
+              case "top-center":
+              case "bottom-center":
+                return { cursor: "ns-resize" };
+              case "middle-left":
+              case "middle-right":
+                return { cursor: "ew-resize" };
+              default:
+                return { cursor: "pointer" };
+            }
+          },
+        });
+      } else {
+        // Remove transformer when deselected
+        transformerRef.current.nodes([]);
+        transformerRef.current.getLayer()?.batchDraw();
+      }
     }
-  }, []);
+  }, [isSelected]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isEditingText) {
+        if (isSelected && (e.key === "Delete" || e.key === "Backspace")) {
+          props.onDelete?.(props.name);
+        }
+        return;
+      }
+
+      // Handle CMD/CTRL + A for text selection
+      if ((e.metaKey || e.ctrlKey) && e.key === "a") {
+        e.preventDefault(); // Prevent default select all behavior
+        setEditText((prev) => {
+          // Simulate text selection by adding special characters
+          // These will be removed when editing is done
+          return `§${prev}§`;
+        });
+        return;
+      }
+
+      if (e.key === "Enter") {
+        setIsEditingText(false);
+        // Remove selection markers before saving
+        props.onRename?.(props.name, editText.replace(/§/g, ""));
+      } else if (e.key === "Escape") {
+        setIsEditingText(false);
+        setEditText(props.name);
+      } else if (e.key === "Backspace") {
+        setEditText((prev) => {
+          // If text is selected (has § markers), delete all selected text
+          if (prev.startsWith("§") && prev.endsWith("§")) {
+            return "";
+          }
+          return prev.slice(0, -1);
+        });
+      } else if (e.key.length === 1) {
+        setEditText((prev) => {
+          // If text is selected (has § markers), replace it with new character
+          if (prev.startsWith("§") && prev.endsWith("§")) {
+            return e.key;
+          }
+          return prev + e.key;
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isEditingText,
+    isSelected,
+    props.name,
+    props.onDelete,
+    props.onRename,
+    editText,
+  ]);
 
   const handleDragMove = (e: Konva.KonvaEventObject<DragEvent>) => {
     let newX = e.target.x();
@@ -122,15 +199,41 @@ const ColoredRect = (props: RectangleProps) => {
     const newWidth = Math.max(50, node.width() * scaleX);
     const newHeight = Math.max(50, node.height() * scaleY);
 
-    // Update the node size
+    // Update the node size and local dimensions
     node.width(newWidth);
     node.height(newHeight);
+    setDimensions({ width: newWidth, height: newHeight });
 
     props.onResize?.(props.name, newWidth, newHeight);
   };
 
-  const handleClick = () => {
-    setColor(Konva.Util.getRandomColor());
+  const handleSelect = () => {
+    setIsSelected(true);
+  };
+
+  const handleDeselect = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    // Only deselect if clicking the stage background
+    if (e.target === e.target.getStage()) {
+      setIsSelected(false);
+    }
+  };
+
+  useEffect(() => {
+    // Add stage click listener for deselection
+    const stage = shapeRef.current?.getStage();
+    if (stage) {
+      stage.on("click", handleDeselect);
+    }
+    return () => {
+      if (stage) {
+        stage.off("click", handleDeselect);
+      }
+    };
+  }, []);
+
+  const handleTextClick = (e: Konva.KonvaEventObject<MouseEvent>) => {
+    e.cancelBubble = true; // Prevent the click from bubbling to the rectangle
+    setIsEditingText(true);
   };
 
   if (props.points && props.points.length > 2) {
@@ -146,19 +249,22 @@ const ColoredRect = (props: RectangleProps) => {
         <Line
           points={props.points.flatMap((p) => [p.x, p.y])}
           closed={true}
-          fill={color}
+          fill="#90caf9"
           stroke="#666"
           strokeWidth={2}
-          onClick={handleClick}
+          onClick={handleSelect}
         />
         <Text
+          ref={textRef}
           x={props.width / 2 - 50}
-          y={props.height / 2}
-          text={props.name}
+          y={(props.height - 20) / 2}
+          text={editText + (isEditingText ? "|" : "")}
           fontSize={16}
           fill="black"
           width={100}
+          height={20}
           align="center"
+          onClick={handleTextClick}
         />
       </Group>
     );
@@ -171,11 +277,11 @@ const ColoredRect = (props: RectangleProps) => {
         ref={shapeRef}
         x={position.x}
         y={position.y}
-        width={props.width}
-        height={props.height}
-        fill={color}
-        onClick={handleClick}
-        onTap={handleClick}
+        width={dimensions.width}
+        height={dimensions.height}
+        fill="#90caf9"
+        onClick={handleSelect}
+        onTap={handleSelect}
         draggable
         onDragMove={handleDragMove}
         onDragEnd={handleDragEnd}
@@ -183,14 +289,30 @@ const ColoredRect = (props: RectangleProps) => {
         strokeWidth={2}
         stroke="#666"
       />
+      {/* Preview rectangle while drawing */}
+      {props.name === "Drawing..." && (
+        <Rect
+          x={position.x}
+          y={position.y}
+          width={dimensions.width}
+          height={dimensions.height}
+          stroke="#0096FF"
+          strokeWidth={2}
+          dash={[5, 5]}
+        />
+      )}
       <Text
-        x={position.x}
-        y={position.y + props.height / 2}
-        text={props.name}
+        ref={textRef}
+        x={position.x + dimensions.width / 2 - 50}
+        y={position.y + (dimensions.height - 20) / 2}
+        text={editText + (isEditingText ? "|" : "")}
         fontSize={16}
         fill="black"
-        width={props.width}
+        width={100}
+        height={20}
         align="center"
+        onClick={handleTextClick}
+        onTap={handleTextClick}
       />
       <Transformer ref={transformerRef} />
     </Group>

@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useState, useRef } from "react";
 import ToolBar from "@/components/ToolBar";
 import { Tool } from "@/types";
+import { KonvaEventObject } from "konva/lib/Node";
 
 const Canvas = dynamic(() => import("@/components/Canvas"), {
   ssr: false,
@@ -30,18 +31,15 @@ export default function Home() {
   const [currentTool, setCurrentTool] = useState<Tool>("rectangle");
   const [isPanning, setIsPanning] = useState(false);
 
-  const handleMouseDown = (e: any) => {
-    if (isPanning) return;
+  const handleToolChange = (tool: Tool) => {
+    setCurrentTool(tool);
+    // Reset panning when switching tools
+    setIsPanning(false);
+  };
 
-    if (currentTool === "delete") {
-      const clickedShape = e.target;
-      if (clickedShape && clickedShape !== e.target.getStage()) {
-        const roomName =
-          clickedShape.parent?.attrs?.name || clickedShape.attrs?.name;
-        if (roomName) {
-          setRooms((prev) => prev.filter((room) => room.name !== roomName));
-        }
-      }
+  const handleMouseDown = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (currentTool === "drag") {
+      setIsPanning(true);
       return;
     }
 
@@ -51,7 +49,10 @@ export default function Home() {
     }
 
     const stage = e.target.getStage();
+    if (!stage) return;
+
     const point = stage.getPointerPosition();
+    if (!point) return;
 
     const stageScale = stage.scaleX();
     const stagePos = stage.position();
@@ -74,11 +75,18 @@ export default function Home() {
     setCurrentRoom(newRoom);
   };
 
-  const handleMouseMove = (e: any) => {
+  const handleMouseMove = (e: KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (currentTool === "drag") {
+      return; // The Canvas component will handle dragging
+    }
+
     if (!isDrawing || !currentRoom) return;
 
     const stage = e.target.getStage();
+    if (!stage) return;
+
     const point = stage.getPointerPosition();
+    if (!point) return;
 
     // Convert point to relative coordinates
     const stageScale = stage.scaleX();
@@ -104,6 +112,11 @@ export default function Home() {
   };
 
   const handleMouseUp = () => {
+    if (currentTool === "drag") {
+      setIsPanning(false);
+      return;
+    }
+
     if (!isDrawing || !currentRoom) return;
 
     setRooms((prev) => [...prev, currentRoom]);
@@ -148,6 +161,18 @@ export default function Home() {
     );
   };
 
+  const handleRoomDelete = (id: string) => {
+    setRooms((prevRooms) => prevRooms.filter((room) => room.name !== id));
+  };
+
+  const handleRoomRename = (id: string, newName: string) => {
+    setRooms((prevRooms) =>
+      prevRooms.map((room) =>
+        room.name === id ? { ...room, name: newName } : room
+      )
+    );
+  };
+
   return (
     <div className="p-20 flex flex-col h-screen font-[family-name:var(--font-geist-sans)]">
       <div className="flex justify-between mb-4">
@@ -185,7 +210,7 @@ export default function Home() {
         </form>
       </div>
       <div className="flex-1 border border-gray-200 rounded-lg">
-        <ToolBar currentTool={currentTool} onToolChange={setCurrentTool} />
+        <ToolBar currentTool={currentTool} onToolChange={handleToolChange} />
         <Canvas
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -208,6 +233,8 @@ export default function Home() {
                 name={room.name}
                 onPositionChange={handlePositionChange}
                 onResize={handleRoomResize}
+                onDelete={handleRoomDelete}
+                onRename={handleRoomRename}
                 otherRooms={otherRooms}
               />
             );

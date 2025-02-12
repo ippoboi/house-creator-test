@@ -1,1 +1,1 @@
-export type Tool = "rectangle" | "pen" | "delete";
+export type Tool = "rectangle" | "drag";
